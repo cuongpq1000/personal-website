@@ -389,25 +389,27 @@ handle_api(struct http_transaction *ta)
     else if(strcmp(req_path, "/api/login") == 0 && ta->req_method == HTTP_GET){
         if(ta->check == true){
             char* encoded = bufio_offset2ptr(ta->client->bufio, ta->token);
-            printf("%s +\n", encoded);
             jwt_t *ymtoken;
-
-            int rc = jwt_decode(&ymtoken, encoded, 
+            time_t now = time(NULL);
+            jwt_decode(&ymtoken, encoded, 
                 (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
                 strlen(NEVER_EMBED_A_SECRET_IN_CODE));
 
-            if (rc){
-                printf("wrong answer\n");
-                return false;
+            char *grants = jwt_get_grants_json(ymtoken, NULL);
+            char* temp = jwt_get_grants_json(ymtoken, NULL);
+            printf("%s\n", temp);
+            char* token = strtok(temp, "{}");
+            token = strtok(token, ",");
+            char* expired;
+            token = strtok_r(token, ":", &expired);
+            if(now < atoi(expired)){
+                ta->resp_status = HTTP_OK; 
+                buffer_appends(&ta->resp_body, grants);
+            }
+            else if (now > atoi(expired)){
+                buffer_appends(&ta->resp_body, "{}");
             }
 
-
-            char *grants = jwt_get_grants_json(ymtoken, NULL);
-
-            printf("%s\n", grants);
-            ta->resp_status = HTTP_OK; 
-            buffer_appends(&ta->resp_body, grants);
-            printf("%s \n", grants);
         }
         else{
             buffer_appends(&ta->resp_body, "{}");
