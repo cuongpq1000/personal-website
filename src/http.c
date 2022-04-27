@@ -37,8 +37,11 @@ static bool http_parse_request(struct http_transaction *ta)
 {
     size_t req_offset;
     ssize_t len = bufio_readline(ta->client->bufio, &req_offset);
-    if (len < 2) // error, EOF, or less than 2 characters
+    if (len < 2)
+    { // error, EOF, or less than 2 characters
+        ta->checker = 0;
         return false;
+    }
 
     char *request = bufio_offset2ptr(ta->client->bufio, req_offset);
     request[len - 2] = '\0'; // replace LF with 0 to ensure zero-termination
@@ -66,11 +69,19 @@ static bool http_parse_request(struct http_transaction *ta)
 
     // record client's HTTP version in request
     if (!strcmp(http_version, "HTTP/1.1"))
+    {
         ta->req_version = HTTP_1_1;
+        ta->checker = 1;
+    }
     else if (!strcmp(http_version, "HTTP/1.0"))
+    {
         ta->req_version = HTTP_1_0;
+        ta->checker = 0;
+    }
     else
+    {
         return false;
+    }
 
     return true;
 }
@@ -116,6 +127,13 @@ http_process_headers(struct http_transaction *ta)
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
          */
+        if (!strcasecmp(field_name, "Connection"))
+        {
+            if (strcasecmp(field_value, "Keep-Alive"))
+                ta->checker = 1;
+            else
+                ta->checker = 0;
+        }
     }
 }
 
@@ -362,65 +380,54 @@ void http_setup_client(struct http_client *self, struct bufio *bufio)
 }
 
 /* Handle a single HTTP transaction.  Returns true on success. */
-void *http_handle_transaction(void *other_self)
+int http_handle_transaction(struct http_client *self)
 {
-    struct http_client *self = malloc(sizeof(struct http_client));
-    self = other_self;
-    bool rc = true;
-    while (rc == true)
+    struct http_transaction ta;
+    memset(&ta, 0, sizeof ta);
+    ta.client = self;
+
+    if (!http_parse_request(&ta))
+        return 0;
+
+    if (!http_process_headers(&ta))
+        return 0;
+
+    if (ta.req_content_len > 0)
     {
-        struct http_transaction ta;
-        memset(&ta, 0, sizeof ta);
-        ta.client = self;
+        int rc = bufio_read(self->bufio, ta.req_content_len, &ta.req_body);
+        if (rc != ta.req_content_len)
+            return 0;
 
-        if (!http_parse_request(&ta))
-            return false;
-
-        if (!http_process_headers(&ta))
-            return false;
-
-        if (ta.req_content_len > 0)
-        {
-            int check_line = bufio_read(self->bufio, ta.req_content_len, &ta.req_body);
-            if (check_line != ta.req_content_len)
-                return false;
-
-            // To see the body, use this:
-            // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
-            // hexdump(body, ta.req_content_len);
-        }
-
-        buffer_init(&ta.resp_headers, 1024);
-        http_add_header(&ta.resp_headers, "Server", "CS3214-Personal-Server");
-        buffer_init(&ta.resp_body, 0);
-
-        rc = false;
-        char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
-        if (STARTS_WITH(req_path, "/api"))
-        {
-            rc = handle_api(&ta);
-        }
-        else if (STARTS_WITH(req_path, "/private"))
-        {
-            /* not implemented */
-        }
-        else
-        {
-            rc = handle_static_asset(&ta, server_root);
-        }
-
-        buffer_delete(&ta.resp_headers);
-        buffer_delete(&ta.resp_body);
-        if (ta.req_version != HTTP_1_1 || rc == false)
-        {
-            rc = false;
-        }
-        else
-        {
-            bufio_truncate(self->bufio);
-            rc = true;
-        }
+        // To see the body, use this:
+        // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
+        // hexdump(body, ta.req_content_len);
     }
-    bufio_close(self->bufio);
-    return NULL;
+
+    buffer_init(&ta.resp_headers, 1024);
+    http_add_header(&ta.resp_headers, "Server", "CS3214-Personal-Server");
+    buffer_init(&ta.resp_body, 0);
+
+    int rc = 0;
+    char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
+    if (STARTS_WITH(req_path, "/api"))
+    {
+        rc = handle_api(&ta);
+    }
+    else if (STARTS_WITH(req_path, "/private"))
+    {
+        /* not implemented */
+    }
+    else
+    {
+        rc = handle_static_asset(&ta, server_root);
+    }
+
+    buffer_delete(&ta.resp_headers);
+    buffer_delete(&ta.resp_body);
+    if (ta.checker == 1)
+    {
+        return 2;
+    }
+
+    return rc;
 }

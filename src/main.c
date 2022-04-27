@@ -35,6 +35,20 @@ int token_expiration_time = 24 * 60 * 60;
 // root from which static files are served
 char *server_root;
 
+static void *clientThread(void *client_socket)
+{
+    int *client_sock = (int *)client_socket;
+    struct http_client client;
+    http_setup_client(&client, bufio_create(*client_sock));
+    int check = http_handle_transaction(&client);
+    while (check == 2)
+    {
+        check = http_handle_transaction(&client);
+    }
+    free(client_socket);
+    bufio_close(client.bufio);
+    return NULL;
+}
 /*
  * A non-concurrent, iterative server that serves one client at a time.
  * For each client, it handles exactly 1 HTTP transaction.
@@ -46,17 +60,13 @@ server_loop(char *port_string)
     while (accepting_socket != -1)
     {
         fprintf(stderr, "Waiting for client...\n");
-        int client_socket = socket_accept_client(accepting_socket);
-        if (client_socket == -1)
+        int *client_socket = (int *)malloc(sizeof(int));
+        *client_socket = socket_accept_client(accepting_socket);
+        if (*client_socket == -1)
             return;
-
-        struct http_client *client = malloc(sizeof(struct http_client));
         pthread_t thread;
-        // struct http_client client;
-        http_setup_client(client, bufio_create(client_socket));
-        // http_handle_transaction(&client);
-        // bufio_close(client.bufio);
-        pthread_create(&thread, NULL, http_handle_transaction, (void *)client);
+        pthread_create(&thread, NULL, clientThread, client_socket);
+        pthread_detach(thread);
     }
 }
 

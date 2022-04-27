@@ -48,6 +48,8 @@ struct http_transaction
     enum http_response_status resp_status;
     buffer_t resp_headers;
     buffer_t resp_body;
+
+    int checker;
     struct http_client *client;
 };
 
@@ -57,7 +59,7 @@ struct http_client
 };
 
 void http_setup_client(struct http_client *, struct bufio *bufio);
-void *http_handle_transaction(void *);
+int http_handle_transaction(struct http_client *);
 void http_add_header(buffer_t *resp, char *key, char *fmt, ...);
 
 #endif /* _HTTP_H */
