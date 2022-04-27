@@ -33,16 +33,15 @@
     (!strncasecmp(field_name, header, sizeof(header) - 1))
 
 /* Parse HTTP request line, setting req_method, req_path, and req_version. */
-static bool
-http_parse_request(struct http_transaction *ta)
+static bool http_parse_request(struct http_transaction *ta)
 {
     size_t req_offset;
     ssize_t len = bufio_readline(ta->client->bufio, &req_offset);
-    if (len < 2)       // error, EOF, or less than 2 characters
+    if (len < 2) // error, EOF, or less than 2 characters
         return false;
 
     char *request = bufio_offset2ptr(ta->client->bufio, req_offset);
-    request[len-2] = '\0';  // replace LF with 0 to ensure zero-termination
+    request[len - 2] = '\0'; // replace LF with 0 to ensure zero-termination
     char *endptr;
     char *method = strtok_r(request, " ", &endptr);
     if (method == NULL)
@@ -62,7 +61,7 @@ http_parse_request(struct http_transaction *ta)
     ta->req_path = bufio_ptr2offset(ta->client->bufio, req_path);
 
     char *http_version = strtok_r(NULL, CR, &endptr);
-    if (http_version == NULL)  // would be HTTP 0.9
+    if (http_version == NULL) // would be HTTP 0.9
         return false;
 
     // record client's HTTP version in request
@@ -80,20 +79,21 @@ http_parse_request(struct http_transaction *ta)
 static bool
 http_process_headers(struct http_transaction *ta)
 {
-    for (;;) {
+    for (;;)
+    {
         size_t header_offset;
         ssize_t len = bufio_readline(ta->client->bufio, &header_offset);
         if (len <= 0)
             return false;
 
         char *header = bufio_offset2ptr(ta->client->bufio, header_offset);
-        if (len == 2 && STARTS_WITH(header, CRLF))       // empty CRLF
+        if (len == 2 && STARTS_WITH(header, CRLF)) // empty CRLF
             return true;
 
-        header[len-2] = '\0';
-        /* Each header field consists of a name followed by a 
-         * colon (":") and the field value. Field names are 
-         * case-insensitive. The field value MAY be preceded by 
+        header[len - 2] = '\0';
+        /* Each header field consists of a name followed by a
+         * colon (":") and the field value. Field names are
+         * case-insensitive. The field value MAY be preceded by
          * any amount of LWS, though a single SP is preferred.
          */
         char *endptr;
@@ -108,7 +108,8 @@ http_process_headers(struct http_transaction *ta)
 
         // you may print the header like so
         // printf("Header: %s: %s\n", field_name, field_value);
-        if (!strcasecmp(field_name, "Content-Length")) {
+        if (!strcasecmp(field_name, "Content-Length"))
+        {
             ta->req_content_len = atoi(field_value);
         }
 
@@ -121,8 +122,7 @@ http_process_headers(struct http_transaction *ta)
 const int MAX_HEADER_LEN = 2048;
 
 /* add a formatted header to the response buffer. */
-void 
-http_add_header(buffer_t * resp, char* key, char* fmt, ...)
+void http_add_header(buffer_t *resp, char *key, char *fmt, ...)
 {
     va_list ap;
 
@@ -145,14 +145,15 @@ add_content_length(buffer_t *res, size_t len)
     http_add_header(res, "Content-Length", "%ld", len);
 }
 
-/* start the response by writing the first line of the response 
+/* start the response by writing the first line of the response
  * to the response buffer.  Used in send_response_header */
 static void
-start_response(struct http_transaction * ta, buffer_t *res)
+start_response(struct http_transaction *ta, buffer_t *res)
 {
     buffer_appends(res, "HTTP/1.0 ");
 
-    switch (ta->resp_status) {
+    switch (ta->resp_status)
+    {
     case HTTP_OK:
         buffer_appends(res, "200 OK");
         break;
@@ -227,7 +228,7 @@ const int MAX_ERROR_LEN = 2048;
 
 /* Send an error response. */
 static bool
-send_error(struct http_transaction * ta, enum http_response_status status, const char *fmt, ...)
+send_error(struct http_transaction *ta, enum http_response_status status, const char *fmt, ...)
 {
     va_list ap;
 
@@ -245,11 +246,11 @@ send_error(struct http_transaction * ta, enum http_response_status status, const
 static bool
 send_not_found(struct http_transaction *ta)
 {
-    return send_error(ta, HTTP_NOT_FOUND, "File %s not found", 
-        bufio_offset2ptr(ta->client->bufio, ta->req_path));
+    return send_error(ta, HTTP_NOT_FOUND, "File %s not found",
+                      bufio_offset2ptr(ta->client->bufio, ta->req_path));
 }
 
-/* A start at assigning an appropriate mime type.  Real-world 
+/* A start at assigning an appropriate mime type.  Real-world
  * servers use more extensive lists such as /etc/mime.types
  */
 static const char *
@@ -274,6 +275,12 @@ guess_mime_type(char *filename)
     if (!strcasecmp(suffix, ".js"))
         return "text/javascript";
 
+    if (!strcasecmp(suffix, ".css"))
+        return "text/css";
+
+    if (!strcasecmp(suffix, ".mp4"))
+        return "video/mp4";
+
     return "text/plain";
 }
 
@@ -282,13 +289,28 @@ static bool
 handle_static_asset(struct http_transaction *ta, char *basedir)
 {
     char fname[PATH_MAX];
-
+    // char *canonicalized_path = realpath(server_root, NULL);
+    // if (canonicalized_path == NULL)
+    // {
+    //     return send_error(ta, HTTP_NOT_FOUND, "Can not find URL.\n");
+    // }
     char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
     // The code below is vulnerable to an attack.  Can you see
     // which?  Fix it to avoid indirect object reference (IDOR) attacks.
+    // char *abs = realpath(req_path, NULL);
+    // if (abs == NULL)
+    // {
+    //     return send_error(ta, HTTP_NOT_FOUND, "Can not find URL.\n");
+    // }
+
+    // if (strstr(abs, canonicalized_path) == NULL)
+    // {
+    //     return send_error(ta, HTTP_NOT_FOUND, "Can not find URL.\n");
+    // }
     snprintf(fname, sizeof fname, "%s%s", basedir, req_path);
 
-    if (access(fname, R_OK)) {
+    if (access(fname, R_OK))
+    {
         if (errno == EACCES)
             return send_error(ta, HTTP_PERMISSION_DENIED, "Permission denied.");
         else
@@ -302,7 +324,8 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
         return send_error(ta, HTTP_INTERNAL_ERROR, "Could not stat file.");
 
     int filefd = open(fname, O_RDONLY);
-    if (filefd == -1) {
+    if (filefd == -1)
+    {
         return send_not_found(ta);
     }
 
@@ -333,53 +356,71 @@ handle_api(struct http_transaction *ta)
 }
 
 /* Set up an http client, associating it with a bufio buffer. */
-void 
-http_setup_client(struct http_client *self, struct bufio *bufio)
+void http_setup_client(struct http_client *self, struct bufio *bufio)
 {
     self->bufio = bufio;
 }
 
 /* Handle a single HTTP transaction.  Returns true on success. */
-bool
-http_handle_transaction(struct http_client *self)
+void *http_handle_transaction(void *other_self)
 {
-    struct http_transaction ta;
-    memset(&ta, 0, sizeof ta);
-    ta.client = self;
+    struct http_client *self = malloc(sizeof(struct http_client));
+    self = other_self;
+    bool rc = true;
+    while (rc == true)
+    {
+        struct http_transaction ta;
+        memset(&ta, 0, sizeof ta);
+        ta.client = self;
 
-    if (!http_parse_request(&ta))
-        return false;
-
-    if (!http_process_headers(&ta))
-        return false;
-
-    if (ta.req_content_len > 0) {
-        int rc = bufio_read(self->bufio, ta.req_content_len, &ta.req_body);
-        if (rc != ta.req_content_len)
+        if (!http_parse_request(&ta))
             return false;
 
-        // To see the body, use this:
-        // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
-        // hexdump(body, ta.req_content_len);
+        if (!http_process_headers(&ta))
+            return false;
+
+        if (ta.req_content_len > 0)
+        {
+            int check_line = bufio_read(self->bufio, ta.req_content_len, &ta.req_body);
+            if (check_line != ta.req_content_len)
+                return false;
+
+            // To see the body, use this:
+            // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
+            // hexdump(body, ta.req_content_len);
+        }
+
+        buffer_init(&ta.resp_headers, 1024);
+        http_add_header(&ta.resp_headers, "Server", "CS3214-Personal-Server");
+        buffer_init(&ta.resp_body, 0);
+
+        rc = false;
+        char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
+        if (STARTS_WITH(req_path, "/api"))
+        {
+            rc = handle_api(&ta);
+        }
+        else if (STARTS_WITH(req_path, "/private"))
+        {
+            /* not implemented */
+        }
+        else
+        {
+            rc = handle_static_asset(&ta, server_root);
+        }
+
+        buffer_delete(&ta.resp_headers);
+        buffer_delete(&ta.resp_body);
+        if (ta.req_version != HTTP_1_1 || rc == false)
+        {
+            rc = false;
+        }
+        else
+        {
+            bufio_truncate(self->bufio);
+            rc = true;
+        }
     }
-
-    buffer_init(&ta.resp_headers, 1024);
-    http_add_header(&ta.resp_headers, "Server", "CS3214-Personal-Server");
-    buffer_init(&ta.resp_body, 0);
-
-    bool rc = false;
-    char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
-    if (STARTS_WITH(req_path, "/api")) {
-        rc = handle_api(&ta);
-    } else
-    if (STARTS_WITH(req_path, "/private")) {
-        /* not implemented */
-    } else {
-        rc = handle_static_asset(&ta, server_root);
-    }
-
-    buffer_delete(&ta.resp_headers);
-    buffer_delete(&ta.resp_body);
-
-    return rc;
+    bufio_close(self->bufio);
+    return NULL;
 }

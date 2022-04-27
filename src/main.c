@@ -15,6 +15,7 @@
 #include "socket.h"
 #include "bufio.h"
 #include "main.h"
+#include <pthread.h>
 
 /* Implement HTML5 fallback.
  * If HTML5 fallback is implemented and activated, the server should
@@ -32,7 +33,7 @@ bool silent_mode = false;
 int token_expiration_time = 24 * 60 * 60;
 
 // root from which static files are served
-char * server_root;
+char *server_root;
 
 /*
  * A non-concurrent, iterative server that serves one client at a time.
@@ -42,62 +43,67 @@ static void
 server_loop(char *port_string)
 {
     int accepting_socket = socket_open_bind_listen(port_string, 10000);
-    while (accepting_socket != -1) {
+    while (accepting_socket != -1)
+    {
         fprintf(stderr, "Waiting for client...\n");
         int client_socket = socket_accept_client(accepting_socket);
         if (client_socket == -1)
             return;
 
-        struct http_client client;
-        http_setup_client(&client, bufio_create(client_socket));
-        http_handle_transaction(&client);
-        bufio_close(client.bufio);
+        struct http_client *client = malloc(sizeof(struct http_client));
+        pthread_t thread;
+        // struct http_client client;
+        http_setup_client(client, bufio_create(client_socket));
+        // http_handle_transaction(&client);
+        // bufio_close(client.bufio);
+        pthread_create(&thread, NULL, http_handle_transaction, (void *)client);
     }
 }
 
 static void
-usage(char * av0)
+usage(char *av0)
 {
     fprintf(stderr, "Usage: %s -p port [-R rootdir] [-h] [-e seconds]\n"
-        "  -p port      port number to bind to\n"
-        "  -R rootdir   root directory from which to serve files\n"
-        "  -e seconds   expiration time for tokens in seconds\n"
-        "  -h           display this help\n"
-        , av0);
+                    "  -p port      port number to bind to\n"
+                    "  -R rootdir   root directory from which to serve files\n"
+                    "  -e seconds   expiration time for tokens in seconds\n"
+                    "  -h           display this help\n",
+            av0);
     exit(EXIT_FAILURE);
 }
 
-int
-main(int ac, char *av[])
+int main(int ac, char *av[])
 {
     int opt;
     char *port_string = NULL;
-    while ((opt = getopt(ac, av, "ahp:R:se:")) != -1) {
-        switch (opt) {
-            case 'a':
-                html5_fallback = true;
-                break;
+    while ((opt = getopt(ac, av, "ahp:R:se:")) != -1)
+    {
+        switch (opt)
+        {
+        case 'a':
+            html5_fallback = true;
+            break;
 
-            case 'p':
-                port_string = optarg;
-                break;
+        case 'p':
+            port_string = optarg;
+            break;
 
-            case 'e':
-                token_expiration_time = atoi(optarg);
-                fprintf(stderr, "token expiration time is %d\n", token_expiration_time);
-                break;
+        case 'e':
+            token_expiration_time = atoi(optarg);
+            fprintf(stderr, "token expiration time is %d\n", token_expiration_time);
+            break;
 
-            case 's':
-                silent_mode = true;
-                break;
+        case 's':
+            silent_mode = true;
+            break;
 
-            case 'R':
-                server_root = optarg;
-                break;
+        case 'R':
+            server_root = optarg;
+            break;
 
-            case 'h':
-            default:    /* '?' */
-                usage(av[0]);
+        case 'h':
+        default: /* '?' */
+            usage(av[0]);
         }
     }
 
@@ -107,11 +113,10 @@ main(int ac, char *av[])
     /* We ignore SIGPIPE to prevent the process from terminating when it tries
      * to send data to a connection that the client already closed.
      * This may happen, in particular, in bufio_sendfile.
-     */ 
+     */
     signal(SIGPIPE, SIG_IGN);
 
     fprintf(stderr, "Using port %s\n", port_string);
     server_loop(port_string);
     exit(EXIT_SUCCESS);
 }
-
