@@ -31,8 +31,9 @@
 #define CR "\r"
 #define STARTS_WITH(field_name, header) \
     (!strncasecmp(field_name, header, sizeof(header) - 1))
-
+// static const char * NEVER_EMBED_A_SECRET_IN_CODE = "supa secret";
 /* Parse HTTP request line, setting req_method, req_path, and req_version. */
+static const char * NEVER_EMBED_A_SECRET_IN_CODE = "supa secret";
 static bool
 http_parse_request(struct http_transaction *ta)
 {
@@ -111,7 +112,19 @@ http_process_headers(struct http_transaction *ta)
         if (!strcasecmp(field_name, "Content-Length")) {
             ta->req_content_len = atoi(field_value);
         }
-
+        if(strcmp(field_name, "Cookie") == 0){
+            char* body;
+            char* method = strtok_r(field_value, ";", &body);
+            while(method != NULL){
+                if(strstr(method, "auth_token")){
+                    break;
+                }
+                method = strtok_r(NULL, ";", &body);
+            }
+            strtok_r(method, "=", &body);
+            ta->token = bufio_ptr2offset(ta->client->bufio, body);
+            ta->check = true;
+        }
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
          */
@@ -151,7 +164,6 @@ static void
 start_response(struct http_transaction * ta, buffer_t *res)
 {
     buffer_appends(res, "HTTP/1.0 ");
-
     switch (ta->resp_status) {
     case HTTP_OK:
         buffer_appends(res, "200 OK");
@@ -282,7 +294,6 @@ static bool
 handle_static_asset(struct http_transaction *ta, char *basedir)
 {
     char fname[PATH_MAX];
-
     char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
     // The code below is vulnerable to an attack.  Can you see
     // which?  Fix it to avoid indirect object reference (IDOR) attacks.
@@ -329,7 +340,81 @@ out:
 static bool
 handle_api(struct http_transaction *ta)
 {
-    return send_error(ta, HTTP_NOT_FOUND, "API not implemented");
+    // if url is api/login and req_method == POST
+    char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
+    char *body = bufio_offset2ptr(ta->client->bufio, ta->req_body);
+    char *user;
+    char *pass;
+    char *endptr;
+    char* token = strtok(body, "{}");
+    token = strtok_r(token, ",", &endptr);
+    token = strtok_r(token, ":", &user);
+    endptr = strtok_r(endptr, ":", &pass);
+
+    char *username = strtok(user, "\"");
+    char *password = strtok(pass, "\""); 
+    if(strcmp(req_path, "/api/login") == 0 && ta->req_method == HTTP_POST){
+
+        if(strcmp(password, "thepassword") == 0 && strcmp(username, "user0") == 0){
+            // unsigned char public_key[16384];
+            jwt_t *mytoken;
+            jwt_new(&mytoken);
+
+            jwt_add_grant(mytoken, "sub", username);
+            time_t now = time(NULL);
+
+            jwt_add_grant_int(mytoken, "iat", now);
+
+            jwt_add_grant_int(mytoken, "exp", now + 3600 * 24);
+
+            jwt_set_alg(mytoken, JWT_ALG_HS256, 
+                (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
+                strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+
+            char *encoded = jwt_encode_str(mytoken);
+
+            char *grants = jwt_get_grants_json(mytoken, NULL);
+
+            buffer_t response;
+            buffer_init(&response, 80);
+            ta->resp_status = HTTP_OK; 
+            buffer_appends(&ta->resp_body, grants);
+            http_add_header(&ta->resp_headers, "Set-Cookie","auth_token=%s; Path=/",encoded);
+        }
+        else{
+            return send_error(ta, HTTP_PERMISSION_DENIED, "not right");
+        }
+    }
+    //if url is api/login and req_method == GET
+    else if(strcmp(req_path, "/api/login") == 0 && ta->req_method == HTTP_GET){
+        if(ta->check == true){
+            char* encoded = bufio_offset2ptr(ta->client->bufio, ta->token);
+            printf("%s +\n", encoded);
+            jwt_t *ymtoken;
+
+            int rc = jwt_decode(&ymtoken, encoded, 
+                (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
+                strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+
+            if (rc){
+                printf("wrong answer\n");
+                return false;
+            }
+
+
+            char *grants = jwt_get_grants_json(ymtoken, NULL);
+
+            printf("%s\n", grants);
+            ta->resp_status = HTTP_OK; 
+            buffer_appends(&ta->resp_body, grants);
+            printf("%s \n", grants);
+        }
+        else{
+            buffer_appends(&ta->resp_body, "{}");
+        }
+    }
+    return send_response(ta);
+
 }
 
 /* Set up an http client, associating it with a bufio buffer. */
@@ -360,6 +445,7 @@ http_handle_transaction(struct http_client *self)
 
         // To see the body, use this:
         // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
+        // printf("%s\n", body);
         // hexdump(body, ta.req_content_len);
     }
 
@@ -374,7 +460,8 @@ http_handle_transaction(struct http_client *self)
     } else
     if (STARTS_WITH(req_path, "/private")) {
         /* not implemented */
-    } else {
+    } 
+    else {
         rc = handle_static_asset(&ta, server_root);
     }
 
