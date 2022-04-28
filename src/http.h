@@ -43,6 +43,8 @@ struct http_transaction
     size_t req_path;     // expressed as offset into the client's bufio.
     size_t req_body;     // ditto
     int req_content_len; // content length of request body
+    size_t token;
+    bool check;
 
     /* response related fields */
     enum http_response_status resp_status;
