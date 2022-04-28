@@ -402,8 +402,8 @@ handle_api(struct http_transaction *ta)
             token = strtok(token, ",");
             char* expired;
             token = strtok_r(token, ":", &expired);
-            if(now < atoi(expired)){
-                ta->resp_status = HTTP_OK; 
+            ta->resp_status = HTTP_OK;
+            if(now < atoi(expired)){ 
                 buffer_appends(&ta->resp_body, grants);
             }
             else if (now > atoi(expired)){
@@ -412,6 +412,7 @@ handle_api(struct http_transaction *ta)
 
         }
         else{
+            ta->resp_status = HTTP_OK;
             buffer_appends(&ta->resp_body, "{}");
         }
     }
