@@ -348,8 +348,19 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     {
         if (errno == EACCES)
             return send_error(ta, HTTP_PERMISSION_DENIED, "Permission denied.");
+        else if (html5_fallback)
+        {
+            char *html_path = "/index.html";
+            snprintf(fname, sizeof fname, "%s%s", basedir, html_path);
+        }
         else
             return send_not_found(ta);
+    }
+
+    if (!strcmp(req_path, "/"))
+    {
+        char *html_path = "/index.html";
+        snprintf(fname, sizeof fname, "%s%s", basedir, html_path);
     }
 
     // Determine file size
@@ -361,7 +372,7 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     int filefd = open(fname, O_RDONLY);
     if (filefd == -1)
     {
-        return send_not_found(ta);
+        return send_error(ta, HTTP_INTERNAL_ERROR, "Could not stat file.");
     }
 
     ta->resp_status = HTTP_OK;
