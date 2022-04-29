@@ -61,7 +61,7 @@ struct http_client
 };
 
 void http_setup_client(struct http_client *, struct bufio *bufio);
-int http_handle_transaction(struct http_client *);
+bool http_handle_transaction(struct http_client *, int expired, bool check);
 void http_add_header(buffer_t *resp, char *key, char *fmt, ...);
 
 #endif /* _HTTP_H */
