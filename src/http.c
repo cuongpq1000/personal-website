@@ -19,7 +19,7 @@
 #include <time.h>
 #include <fcntl.h>
 #include <linux/limits.h>
-
+#include <dirent.h>
 #include "http.h"
 #include "hexdump.h"
 #include "socket.h"
@@ -481,6 +481,21 @@ handle_api(struct http_transaction *ta)
             buffer_appends(&ta->resp_body, "{}");
         }
     }
+    // else if (strcmp(req_path, "/api/video") == 0 && ta->req_method == HTTP_GET)
+    // {
+    //     DIR *dir;
+    //     struct dirent *file;
+    //     dir = opendir(req_path);
+    //     // char fname[PATH_MAX];
+    //     while ((file = readdir(dir)) != NULL)
+    //     {
+    //         char *suffix = strrchr(file->d_name, '.');
+    //         if (strcmp(suffix, ".mp4") == 0)
+    //         {
+    //             printf("hello video");
+    //         }
+    //     }
+    // }
     return send_response(ta);
 }
 
