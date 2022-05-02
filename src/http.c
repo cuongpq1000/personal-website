@@ -37,13 +37,14 @@
 /* Parse HTTP request line, setting req_method, req_path, and req_version. */
 static const char *NEVER_EMBED_A_SECRET_IN_CODE = "supa secret";
 static bool
+send_error(struct http_transaction *ta, enum http_response_status status, const char *fmt, ...);
+static bool
 http_parse_request(struct http_transaction *ta)
 {
     size_t req_offset;
     ssize_t len = bufio_readline(ta->client->bufio, &req_offset);
     if (len < 2)
     { // error, EOF, or less than 2 characters
-        ta->checker = 0;
         return false;
     }
 
@@ -63,8 +64,13 @@ http_parse_request(struct http_transaction *ta)
 
     char *req_path = strtok_r(NULL, " ", &endptr);
     if (req_path == NULL)
+    {
         return false;
-
+    }
+    else if (strstr(req_path, ".."))
+    {
+        return send_error(ta, HTTP_NOT_FOUND, "Permission denied.");
+    }
     ta->req_path = bufio_ptr2offset(ta->client->bufio, req_path);
 
     char *http_version = strtok_r(NULL, CR, &endptr);
@@ -75,12 +81,10 @@ http_parse_request(struct http_transaction *ta)
     if (!strcmp(http_version, "HTTP/1.1"))
     {
         ta->req_version = HTTP_1_1;
-        ta->checker = 1;
     }
     else if (!strcmp(http_version, "HTTP/1.0"))
     {
         ta->req_version = HTTP_1_0;
-        ta->checker = 0;
     }
     else
     {
@@ -148,7 +152,7 @@ http_process_headers(struct http_transaction *ta)
          */
         if (!strcasecmp(field_name, "Connection"))
         {
-            if (strcasecmp(field_value, "Keep-Alive"))
+            if (strcmp(field_value, "close") == 0)
                 ta->checker = 1;
             else
                 ta->checker = 0;
@@ -187,7 +191,7 @@ add_content_length(buffer_t *res, size_t len)
 static void
 start_response(struct http_transaction *ta, buffer_t *res)
 {
-    buffer_appends(res, "HTTP/1.0 ");
+    buffer_appends(res, "HTTP/1.1 ");
 
     switch (ta->resp_status)
     {
@@ -483,27 +487,30 @@ handle_api(struct http_transaction *ta, int expired)
         http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
         return send_response(ta);
     }
+    // else if (strcmp(req_path, "/api/video") == 0 && ta->req_method == HTTP_GET)
+    // {
+    //     DIR *dir;
+    //     struct dirent *file;
+    //     dir = opendir(req_path);
+    //     char fname[PATH_MAX];
+    //     while ((file = readdir(dir)) != NULL)
+    //     {
+    //         char *suffix = strrchr(file->d_name, '.');
+    //         if (strcmp(suffix, ".mp4") == 0)
+    //         {
+    //             snprintf(fname, sizeof fname, "%s/%s", server_root, file->d_name);
+    //             struct stat statis;
+    //             int size = stat(fname, &statis);
+    //         }
+    //     }
+    // }
     else
     {
         ta->resp_status = HTTP_NOT_FOUND;
         http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
         return send_response(ta);
     }
-    // else if (strcmp(req_path, "/api/video") == 0 && ta->req_method == HTTP_GET)
-    // {
-    //     DIR *dir;
-    //     struct dirent *file;
-    //     dir = opendir(req_path);
-    //     // char fname[PATH_MAX];
-    //     while ((file = readdir(dir)) != NULL)
-    //     {
-    //         char *suffix = strrchr(file->d_name, '.');
-    //         if (strcmp(suffix, ".mp4") == 0)
-    //         {
-    //             printf("hello video");
-    //         }
-    //     }
-    // }
+
     return send_response(ta);
 }
 
@@ -587,10 +594,18 @@ bool http_handle_transaction(struct http_client *self, int expired, bool check)
 
     buffer_delete(&ta.resp_headers);
     buffer_delete(&ta.resp_body);
-    // if (ta.checker == 1)
-    // {
-    //     return 2;
-    // }
-
+    // bufio_truncate(ta.client->bufio);
+    if (ta.req_version == HTTP_1_0)
+    {
+        return false;
+    }
+    else if (ta.req_version == HTTP_1_1)
+    {
+        if (ta.checker == 1)
+        {
+            return false;
+        }
+        return true;
+    }
     return rc;
 }
