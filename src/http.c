@@ -152,10 +152,10 @@ http_process_headers(struct http_transaction *ta)
          */
         if (!strcasecmp(field_name, "Connection"))
         {
-            if (strcmp(field_value, "close") == 0)
-                ta->checker = 1;
-            else
+            if (strcasecmp(field_value, "Keep-Alive") == 0)
                 ta->checker = 0;
+            else
+                ta->checker = 1;
         }
     }
 }
@@ -493,6 +493,11 @@ handle_api(struct http_transaction *ta, int expired)
     //     struct dirent *file;
     //     dir = opendir(req_path);
     //     char fname[PATH_MAX];
+    //     json_t *mp4_array = json_array();
+    //     if (mp4_array == NULL)
+    //     {
+    //         return send_error(ta, HTTP_INTERNAL_ERROR, "There is no object");
+    //     }
     //     while ((file = readdir(dir)) != NULL)
     //     {
     //         char *suffix = strrchr(file->d_name, '.');
@@ -500,9 +505,23 @@ handle_api(struct http_transaction *ta, int expired)
     //         {
     //             snprintf(fname, sizeof fname, "%s/%s", server_root, file->d_name);
     //             struct stat statis;
-    //             int size = stat(fname, &statis);
+    //             stat(fname, &statis);
+    //             json_t *video_object = json_object();
+    //             int a = json_object_set_new(video_object, "size", json_integer(statis.st_size));
+    //             int b = json_object_set_new(video_object, "name", json_string(file->d_name));
+    //             if (a != 0)
+    //             {
+    //                 continue;
+    //             }
+    //             if (b != 0)
+    //             {
+    //                 continue;
+    //             }
+    //             json_array_append(mp4_array, video_object);
+    //             json_decref(video_object);
     //         }
     //     }
+    //     closedir(dir);
     // }
     else
     {
