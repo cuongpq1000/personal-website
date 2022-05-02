@@ -409,14 +409,6 @@ handle_api(struct http_transaction *ta, int expired)
         const char *username = json_string_value(username_json);
         const char *password = json_string_value(password_json);
 
-        // convert body to json
-
-        // check if it has a key username and password json_t *json_object_get(const json_t *object, const char *key)
-
-        // if its return NULL, return send_error()
-
-        // if not, convert the return value back to string
-
         if (strcmp(password, "thepassword") == 0 && strcmp(username, "user0") == 0)
         {
             // unsigned char public_key[16384];
@@ -462,19 +454,16 @@ handle_api(struct http_transaction *ta, int expired)
             jwt_decode(&ymtoken, encoded,
                        (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE,
                        strlen(NEVER_EMBED_A_SECRET_IN_CODE));
-
+            
             char *grants = jwt_get_grants_json(ymtoken, NULL);
-            char *temp = jwt_get_grants_json(ymtoken, NULL);
-            char *token = strtok(temp, "{}");
-            token = strtok(token, ",");
-            char *expired;
-            token = strtok_r(token, ":", &expired);
+            
+            long expired = jwt_get_grant_int(ymtoken, "exp");
             ta->resp_status = HTTP_OK;
-            if (now < atoi(expired))
+            if (now < expired)
             {
                 buffer_appends(&ta->resp_body, grants);
             }
-            else if (now > atoi(expired))
+            else if (now > expired)
             {
                 buffer_appends(&ta->resp_body, "{}");
             }
@@ -486,6 +475,9 @@ handle_api(struct http_transaction *ta, int expired)
         }
         http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
         return send_response(ta);
+    } 
+    else if (strcmp(req_path, "/api/login") == 0 && ta->req_method != HTTP_GET && ta->req_method != HTTP_POST){
+        return send_error(ta, HTTP_METHOD_NOT_ALLOWED, "not right");
     }
     // else if (strcmp(req_path, "/api/video") == 0 && ta->req_method == HTTP_GET)
     // {
@@ -506,12 +498,9 @@ handle_api(struct http_transaction *ta, int expired)
     // }
     else
     {
-        ta->resp_status = HTTP_NOT_FOUND;
-        http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
-        return send_response(ta);
+        return send_error(ta, HTTP_NOT_FOUND, "not right");
     }
 
-    return send_response(ta);
 }
 
 /* Set up an http client, associating it with a bufio buffer. */

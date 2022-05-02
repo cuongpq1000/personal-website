@@ -40,13 +40,15 @@ static void *clientThread(void *client_socket)
     int *client_sock = (int *)client_socket;
     struct http_client client;
     http_setup_client(&client, bufio_create(*client_sock));
-    for (;;)
-    {
-        if (!http_handle_transaction(&client, token_expiration_time, html5_fallback))
-        {
-            break;
-        }
-    }
+    // for (;;)
+    // {
+    //     if (!http_handle_transaction(&client, token_expiration_time, html5_fallback))
+    //     {
+    //         break;
+    //     }
+    // }
+    while(http_handle_transaction(&client, token_expiration_time, html5_fallback))
+    {}
     free(client_socket);
     bufio_close(client.bufio);
     return NULL;
