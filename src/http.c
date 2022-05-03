@@ -131,6 +131,18 @@ http_process_headers(struct http_transaction *ta)
         {
             ta->req_content_len = atoi(field_value);
         }
+        if (!strcasecmp(field_name, "Range"))
+        {
+            ta->ispartial = true;
+            char each[5];
+            int s = -1;
+            int e = -1;
+            sscanf(field_value, "%5s=%d-%d", each, &s, &e);
+
+            ta->start = s;
+            ta->end = e;
+            ta->unit = each;
+        }
         if (strcmp(field_name, "Cookie") == 0)
         {
             char *body;
@@ -334,7 +346,7 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     // The code below is vulnerable to an attack.  Can you see
     // which?  Fix it to avoid indirect object reference (IDOR) attacks.
     snprintf(fname, sizeof fname, "%s%s", basedir, req_path);
-
+    printf("%s \n", fname);
     if (access(fname, R_OK))
     {
         if (errno == EACCES)
@@ -349,8 +361,11 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     }
     if (!strcmp(req_path, "/"))
     {
-        char *html_path = "/index.html";
-        snprintf(fname, sizeof fname, "%s%s", basedir, html_path);
+        if (html5_fallback)
+        {
+            char *html_path = "/index.html";
+            snprintf(fname, sizeof fname, "%s%s", basedir, html_path);
+        }
     }
 
     // Determine file size
@@ -364,14 +379,48 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     {
         return send_error(ta, HTTP_INTERNAL_ERROR, "Could not stat file.");
     }
+    if (ta->ispartial != true)
+    {
+        ta->resp_status = HTTP_OK;
+    }
+    else
+    {
+        ta->resp_status = HTTP_PARTIAL_CONTENT;
+    }
 
-    ta->resp_status = HTTP_OK;
     http_add_header(&ta->resp_headers, "Content-Type", "%s", guess_mime_type(fname));
-    off_t from = 0, to = st.st_size - 1;
+    off_t from, to, content_length;
+    // char *suffix = fname + strlen(fname) - 4;
+    if (ta->ispartial)
+    {
+        from = ta->start;
+        if (ta->end == -1)
+        {
+            to = st.st_size - 1;
+            if (from < 0)
+            {
+                from = to + from + 1;
+            }
+        }
+        else
+        {
+            to = ta->end;
+        }
 
-    off_t content_length = to + 1 - from;
+        content_length = to + 1 - from;
+        http_add_header(&ta->resp_headers, "Content-Range", "bytes %ld-%ld/%ld", from, to, st.st_size);
+    }
+    else
+    {
+        from = 0;
+        to = st.st_size - 1;
+        content_length = to + 1 - from;
+    }
+
     add_content_length(&ta->resp_headers, content_length);
 
+    http_add_header(&ta->resp_headers, "Accept-Ranges", "bytes");
+    ta->ispartial = false;
     bool success = send_response_header(ta);
     if (!success)
         goto out;
@@ -454,9 +503,9 @@ handle_api(struct http_transaction *ta, int expired)
             jwt_decode(&ymtoken, encoded,
                        (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE,
                        strlen(NEVER_EMBED_A_SECRET_IN_CODE));
-            
+
             char *grants = jwt_get_grants_json(ymtoken, NULL);
-            
+
             long expired = jwt_get_grant_int(ymtoken, "exp");
             ta->resp_status = HTTP_OK;
             if (now < expired)
@@ -474,52 +523,61 @@ handle_api(struct http_transaction *ta, int expired)
             buffer_appends(&ta->resp_body, "{}");
         }
         http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
-        return send_response(ta);
-    } 
-    else if (strcmp(req_path, "/api/login") == 0 && ta->req_method != HTTP_GET && ta->req_method != HTTP_POST){
+    }
+    else if (strcmp(req_path, "/api/login") == 0 && ta->req_method != HTTP_GET && ta->req_method != HTTP_POST)
+    {
         return send_error(ta, HTTP_METHOD_NOT_ALLOWED, "not right");
     }
-    // else if (strcmp(req_path, "/api/video") == 0 && ta->req_method == HTTP_GET)
-    // {
-    //     DIR *dir;
-    //     struct dirent *file;
-    //     dir = opendir(req_path);
-    //     char fname[PATH_MAX];
-    //     json_t *mp4_array = json_array();
-    //     if (mp4_array == NULL)
-    //     {
-    //         return send_error(ta, HTTP_INTERNAL_ERROR, "There is no object");
-    //     }
-    //     while ((file = readdir(dir)) != NULL)
-    //     {
-    //         char *suffix = strrchr(file->d_name, '.');
-    //         if (strcmp(suffix, ".mp4") == 0)
-    //         {
-    //             snprintf(fname, sizeof fname, "%s/%s", server_root, file->d_name);
-    //             struct stat statis;
-    //             stat(fname, &statis);
-    //             json_t *video_object = json_object();
-    //             int a = json_object_set_new(video_object, "size", json_integer(statis.st_size));
-    //             int b = json_object_set_new(video_object, "name", json_string(file->d_name));
-    //             if (a != 0)
-    //             {
-    //                 continue;
-    //             }
-    //             if (b != 0)
-    //             {
-    //                 continue;
-    //             }
-    //             json_array_append(mp4_array, video_object);
-    //             json_decref(video_object);
-    //         }
-    //     }
-    //     closedir(dir);
-    // }
+    else if (strcmp(req_path, "/api/video") == 0 && ta->req_method == HTTP_GET)
+    {
+        DIR *dir;
+        struct dirent *file;
+        dir = opendir(server_root);
+        char fname[PATH_MAX];
+        json_t *video_array = json_array();
+        if (video_array == NULL)
+        {
+            return send_error(ta, HTTP_INTERNAL_ERROR, "There is no object");
+        }
+
+        while ((file = readdir(dir)) != NULL)
+        {
+            char *suffix = file->d_name + strlen(file->d_name) - 4;
+            if (suffix < file->d_name)
+            {
+                continue;
+            }
+            if (strcmp(suffix, ".mp4") == 0)
+            {
+                snprintf(fname, sizeof fname, "%s/%s", server_root, file->d_name);
+                struct stat statis;
+                stat(fname, &statis);
+                json_t *video_object = json_object();
+                int a = json_object_set_new(video_object, "size", json_integer(statis.st_size));
+                int b = json_object_set_new(video_object, "name", json_string(file->d_name));
+                if (a != 0)
+                {
+                    continue;
+                }
+                if (b != 0)
+                {
+                    continue;
+                }
+                json_array_append(video_array, video_object);
+            }
+        }
+        closedir(dir);
+        ta->resp_status = HTTP_OK;
+        buffer_appends(&ta->resp_body, json_dumps(video_array, JSON_INDENT(4)));
+        http_add_header(&ta->resp_headers, "Content-Type", "application/json");
+        http_add_header(&ta->resp_headers, "Accept-Ranges", "bytes");
+    }
     else
     {
         return send_error(ta, HTTP_NOT_FOUND, "not right");
     }
 
+    return send_response(ta);
 }
 
 /* Set up an http client, associating it with a bufio buffer. */
@@ -591,10 +649,10 @@ bool http_handle_transaction(struct http_client *self, int expired, bool check)
             return send_error(&ta, HTTP_PERMISSION_DENIED, "not right");
         }
     }
-    else if (check == false && STARTS_WITH(req_path, "/public"))
-    {
-        return send_error(&ta, HTTP_NOT_FOUND, "File not found");
-    }
+    // else if (check == false && STARTS_WITH(req_path, "/public"))
+    // {
+    //     return send_error(&ta, HTTP_NOT_FOUND, "File not found");
+    // }
     else
     {
         rc = handle_static_asset(&ta, server_root);

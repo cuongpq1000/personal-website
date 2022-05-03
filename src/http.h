@@ -53,6 +53,10 @@ struct http_transaction
 
     int checker;
     struct http_client *client;
+    char *unit;
+    off_t start;
+    off_t end;
+    bool ispartial;
 };
 
 struct http_client
