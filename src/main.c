@@ -47,7 +47,7 @@ static void *clientThread(void *client_socket)
     //         break;
     //     }
     // }
-    while(http_handle_transaction(&client, token_expiration_time, html5_fallback))
+    while(http_handle_transaction(&client, token_expiration_time))
     {}
     free(client_socket);
     bufio_close(client.bufio);

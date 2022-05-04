@@ -143,7 +143,7 @@ http_process_headers(struct http_transaction *ta)
             ta->end = e;
             ta->unit = each;
         }
-        if (strcmp(field_name, "Cookie") == 0)
+        if (!strcasecmp(field_name, "Cookie"))
         {
             char *body;
             char *method = strtok_r(field_value, ";", &body);
@@ -333,6 +333,9 @@ guess_mime_type(char *filename)
 
     if (!strcasecmp(suffix, ".mp4"))
         return "video/mp4";
+    
+    if (!strcasecmp(suffix, ".svg"))
+        return "image/svg+xml";
 
     return "text/plain";
 }
@@ -346,13 +349,14 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     // The code below is vulnerable to an attack.  Can you see
     // which?  Fix it to avoid indirect object reference (IDOR) attacks.
     snprintf(fname, sizeof fname, "%s%s", basedir, req_path);
-    printf("%s \n", fname);
     if (access(fname, R_OK))
     {
         if (errno == EACCES)
             return send_error(ta, HTTP_PERMISSION_DENIED, "Permission denied.");
         else if (html5_fallback)
         {
+            char *encoded = bufio_offset2ptr(ta->client->bufio, ta->token);
+            printf("%s\n", encoded);
             char *html_path = "/index.html";
             snprintf(fname, sizeof fname, "%s%s", basedir, html_path);
         }
@@ -485,7 +489,6 @@ handle_api(struct http_transaction *ta, int expired)
             buffer_appends(&ta->resp_body, grants);
             http_add_header(&ta->resp_headers, "Set-Cookie", "auth_token=%s; Path=/", encoded);
             http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
-            return send_response(ta);
         }
         else
         {
@@ -587,7 +590,7 @@ void http_setup_client(struct http_client *self, struct bufio *bufio)
 }
 
 /* Handle a single HTTP transaction.  Returns true on success. */
-bool http_handle_transaction(struct http_client *self, int expired, bool check)
+bool http_handle_transaction(struct http_client *self, int expired)
 {
     struct http_transaction ta;
     memset(&ta, 0, sizeof ta);
@@ -628,10 +631,10 @@ bool http_handle_transaction(struct http_client *self, int expired, bool check)
         {
             char *encoded = bufio_offset2ptr(ta.client->bufio, ta.token);
             jwt_t *ymtoken;
-            int check = jwt_decode(&ymtoken, encoded,
+            int dec = jwt_decode(&ymtoken, encoded,
                                    (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE,
                                    strlen(NEVER_EMBED_A_SECRET_IN_CODE));
-            if (check)
+            if (dec)
             {
                 return send_error(&ta, HTTP_PERMISSION_DENIED, "not right");
             }
@@ -649,7 +652,7 @@ bool http_handle_transaction(struct http_client *self, int expired, bool check)
             return send_error(&ta, HTTP_PERMISSION_DENIED, "not right");
         }
     }
-    // else if (check == false && STARTS_WITH(req_path, "/public"))
+    // else if (check == false && !STARTS_WITH(req_path, "/public"))
     // {
     //     return send_error(&ta, HTTP_NOT_FOUND, "File not found");
     // }
