@@ -4,8 +4,20 @@
  * This code is mainly intended as a replacement for the book's 'tiny.c' server
  * It provides a *partial* implementation of HTTP/1.0 which can form a basis for
  * the assignment.
+ * 
+ * This project is a personal web server utilizing o the principles of internetwork communication using
+ * the HTTP and TCP protocols and also implement a concurrent server that can handle multiple clients 
+ * simultaneously. In session 2.1, we will implement the mime type to support some files like html, css, js
+ * mp4. In the second session, support a single user that will authenticate with a username
+ * and password. If the user is authenticated, they should have access to the secure portion
+ * of your server, which are all files located under /private. Otherwise, such access should
+ * be denied. In the session 2.3 and 2.4, we will implement the fall back html to change the URL 
+ * that’s displayed in the address bar, making it appear to the user that they have navigated to a new URL 
+ * when in fact all changes to the page were driven by JavaScript code that was originally loaded. We also support 
+ * the range request to transfer part of a file
  *
  * @author G. Back for CS 3214 Spring 2018
+ * @author Cuong Pham, Khanh Pham CS 3214 Spring 2022 (cpham006, khanh19)
  */
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -394,7 +406,6 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
 
     http_add_header(&ta->resp_headers, "Content-Type", "%s", guess_mime_type(fname));
     off_t from, to, content_length;
-    // char *suffix = fname + strlen(fname) - 4;
     if (ta->ispartial)
     {
         from = ta->start;
@@ -438,12 +449,16 @@ out:
     return success;
 }
 
+// This function will handle all the API, in the funcion we will check if the url is api/login and also check if the request method
+// is post or get. If the password's value or username's value is NULL, we will send the error 403. Otherwise, we will send the response 
+// body and also send the content of cookies. Also, we check if the URL is right but the request method is not post or get, we will send the 
+// error 405. When the URL is api/video, it will take the all the mp4 file in root, and then return the json object which contains the 
+// name and size
 static bool
 handle_api(struct http_transaction *ta, int expired)
 {
-    // if url is api/login and req_method == POST
     char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
-
+        // if url is api/login and req_method == POST
     if (strcmp(req_path, "/api/login") == 0 && ta->req_method == HTTP_POST)
     {
         char *body = bufio_offset2ptr(ta->client->bufio, ta->req_body);
@@ -626,7 +641,6 @@ bool http_handle_transaction(struct http_client *self, int expired)
     }
     else if (STARTS_WITH(req_path, "/private"))
     {
-        // char *encoded = bufio_offset2ptr(ta.client->bufio, ta.token);
         if (ta.check == true)
         {
             char *encoded = bufio_offset2ptr(ta.client->bufio, ta.token);
@@ -652,10 +666,6 @@ bool http_handle_transaction(struct http_client *self, int expired)
             return send_error(&ta, HTTP_PERMISSION_DENIED, "not right");
         }
     }
-    // else if (check == false && !STARTS_WITH(req_path, "/public"))
-    // {
-    //     return send_error(&ta, HTTP_NOT_FOUND, "File not found");
-    // }
     else
     {
         rc = handle_static_asset(&ta, server_root);
@@ -663,7 +673,6 @@ bool http_handle_transaction(struct http_client *self, int expired)
 
     buffer_delete(&ta.resp_headers);
     buffer_delete(&ta.resp_body);
-    // bufio_truncate(ta.client->bufio);
     if (ta.req_version == HTTP_1_0)
     {
         return false;

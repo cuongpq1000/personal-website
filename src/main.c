@@ -1,7 +1,9 @@
 /*
  * Skeleton files for personal server assignment.
- *
+ * Implement the multithread and user other function
+ * that was implemented in other class
  * @author Godmar Back
+ * @author Cuong Pham, Khanh Pham (cpham006, khanh19)
  * written for CS3214, Spring 2018.
  */
 
@@ -35,18 +37,12 @@ int token_expiration_time = 24 * 60 * 60;
 // root from which static files are served
 char *server_root;
 
+// create multithread to allow multiple users access at the same time
 static void *clientThread(void *client_socket)
 {
     int *client_sock = (int *)client_socket;
     struct http_client client;
     http_setup_client(&client, bufio_create(*client_sock));
-    // for (;;)
-    // {
-    //     if (!http_handle_transaction(&client, token_expiration_time, html5_fallback))
-    //     {
-    //         break;
-    //     }
-    // }
     while(http_handle_transaction(&client, token_expiration_time))
     {}
     free(client_socket);

@@ -1,0 +1,41 @@
+start_time        : 1651629830
+last_update       : 1651633799
+run_time          : 3968
+fuzzer_pid        : 4029526
+cycles_done       : 0
+cycles_wo_finds   : 0
+execs_done        : 756806
+execs_per_sec     : 190.71
+execs_ps_last_min : 46.51
+paths_total       : 515
+paths_favored     : 99
+paths_found       : 96
+paths_imported    : 53
+max_depth         : 3
+cur_path          : 459
+pending_favs      : 28
+pending_total     : 242
+variable_paths    : 10
+stability         : 96.08%
+bitmap_cvg        : 32.45%
+unique_crashes    : 0
+unique_hangs      : 0
+last_path         : 1651633172
+last_crash        : 0
+last_hang         : 0
+execs_since_crash : 756806
+exec_timeout      : 40
+slowest_exec_ms   : 0
+peak_rss_mb       : 0
+cpu_affinity      : 0
+edges_found       : 586
+total_edges       : 1806
+var_byte_count    : 23
+havoc_expansion   : 0
+testcache_size    : 10141183
+testcache_count   : 515
+testcache_evict   : 0
+afl_banner        : pserv [fuzzing on 4 core(s)]
+afl_version       : ++3.15a
+target_mode       : shmem_testcase default
+command_line      : /home/courses/cs3214/bin/sfi/AFLplusplus/afl-fuzz -i /home/courses/cs3214/bin/sfi/comux_inputs -o ./fuzz_out_2022-05-03_22-02-59 -V 5400.0 -M fuzz0 -T pserv [fuzzing on 4 core(s)] /home/ugrads/majors/cpham006/3214/p4/pserv/src/server-fuzz -p 40335 -R /home/ugrads/majors/cpham006/3214/p4/pserv/src/fuzz_root
