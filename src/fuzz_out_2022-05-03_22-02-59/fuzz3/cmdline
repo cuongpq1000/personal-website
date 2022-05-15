@@ -1,0 +1,5 @@
+/home/ugrads/majors/cpham006/3214/p4/pserv/src/server-fuzz
+-p
+55825
+-R
+/home/ugrads/majors/cpham006/3214/p4/pserv/src/fuzz_root
